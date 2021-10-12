@@ -55,12 +55,12 @@ NECPP_OBJS = $(NECPP_SRC:.cpp=.o)
 CPP_SRC  = test_cpp.cpp
 CPP_OBJS = $(CPP_SRC:.cpp=.o)
 
-CXXFLAGS=-I ../src/ -I .. -O2 -Wall
-
+# CXXFLAGS=-I ../src/ -I .. -O2 -Wall
+CXXFLAGS=-g -I ../src/ -I .. -Wall
 
 test_cpp: ${CPP_OBJS} ${NECPP_OBJS}
-	gcc -o test_cpp ${CPP_OBJS} ${NECPP_OBJS} -lstdc++ -lm -llapack
-	./test_cpp
+	g++ ${CCCALLFLAGS} -o test_cpp ${CPP_OBJS} ${NECPP_OBJS} -lstdc++ -lm -llapack
+	# ./test_cpp
 
 cpp_clean:
 	rm -f ${CPP_OBJS} ${NECPP_OBJS} 

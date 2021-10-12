@@ -287,9 +287,9 @@ void lu_decompose_ge(nec_output_file& s_output, int64_t n, complex_array& a, int
     int64_t i_offset = i * ndim;
     int64_t j_offset = 0;
     for (int j = 0; j < i; j++ ) {
-      nec_complex aij = a[i+j_offset];
-      a[i+j_offset] = a[j+i_offset];
-      a[j+i_offset] = aij;
+      nec_complex aij = a[i+j_offset]; 
+      a[j_offset +i] = a[j+i_offset];
+      a[i_offset+ j] = aij;
       
       j_offset += ndim;
     }
@@ -319,7 +319,7 @@ void lu_decompose_ge(nec_output_file& s_output, int64_t n, complex_array& a, int
     }
     
     /* step 4 */
-    nec_float dmax = norm(scm[r]);
+    nec_float dmax = norm(scm[r]); //here we are assuming that the top right value is a max;
     
     int rp1 = r+1;
     ip[r]= rp1;

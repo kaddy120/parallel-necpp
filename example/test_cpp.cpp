@@ -1,4 +1,6 @@
 #include <iostream>
+#include <mpi/mpi.h>
+#include <omp.h>
 using namespace std;
 
 /*
@@ -23,12 +25,27 @@ using namespace std;
   along with this program; if not, write to the Free Software
   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
+// #include "../src/c_geometry.h"
 #include "c_geometry.h"
 #include "nec_context.h"
 #include "nec_exception.h"
 #include "nec_radiation_pattern.h"
 
+/*
+atoi(string) --> convert string to integer
+ it's better to use stro(primitive datatpe: i, l, d, f) --> convert string to i, l, d, or f 
+
+char str[100] = "133";
+i.e long int x = strtlong(str, NULL, 10);
+*/
 int main(int argc, char **argv) {
+
+  // int Nprocs, Myrank;
+  // MPI_Init(&argc, &argv);
+  // MPI_Comm_size(MPI_COMM_WORLD, &Nprocs);
+  // MPI_Comm_rank(MPI_COMM_WORLD, &Myrank);
+  // MPI_CXX_DOUBLE_COMPLEX 
+
   try {
     cout << "Nec2++ C++ example. Running (takes a few minutes...)" << endl;
     
