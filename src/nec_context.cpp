@@ -21,6 +21,7 @@
 #include "nec_exception.h"
 
 #include <cstdlib>
+#include <mpi/mpi.h>
 
 nec_context::nec_context() : fnorm(0,0), current_vector(0) {
   m_output_fp=NULL;
@@ -1067,7 +1068,7 @@ void nec_context::simulate(bool far_field_flag) {
 
     case PROCESSING_STRUCTURE_LOADING: /* structure segment loading */
       DEBUG_TRACE("igox = " << igox << ", processing_state = " << processing_state);
-      structure_segment_loading();
+      structure_segment_loading();  // here is where kaddy have to start...
 
       processing_state=PROCESSING_EXCITATION_SETUP;
       ntsol=0;
@@ -1482,7 +1483,7 @@ void nec_context::structure_segment_loading()
   cmset( neq, cm, rkh );
   secnds( &tim2 );
   tim= tim2- tim1;
-  factrs(m_output, npeq, neq, cm, ip );
+  factrs(m_output, npeq, neq, cm, ip ); // This where am working...(Kaddy).
   secnds( &tim1 );
   tim2= tim1- tim2;
   
@@ -2017,9 +2018,24 @@ void nec_context::load()
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wconversion"
+int Nprocs, Myrank;
+int Q = 2, P = 1;
+int block_size = 4, num_blocks_; 
+
+int i_, r_;
 
 /* cmset sets up the complex structure matrix in the array in_cm */
 void nec_context::cmset( int64_t nrow, complex_array& in_cm, nec_float rkhx) {
+
+  MPI_Comm_size(MPI_COMM_WORLD, &Nprocs);
+  MPI_Comm_rank(MPI_COMM_WORLD, &Myrank);
+
+  int row_ = m_geometry->n_segments / P;
+  int col_ = m_geometry->n_segments / Q;
+
+  // the processor with the data, (i%P)*Q+j%Q,
+// which index, i/P*b_size_ & j/Q*P_size_
+
   complex_array scm;
   
   int64_t np = m_geometry->np;
@@ -2051,8 +2067,10 @@ void nec_context::cmset( int64_t nrow, complex_array& in_cm, nec_float rkhx) {
 
   ASSERT(in2 == std::min(nlast, np));
   
+  num_blocks_ = m_geometry->n_segments /block_size;
   /* wire source loop */
-  for( int j = 1; j <= m_geometry->n_segments; j++ ) {
+for(i_=0; i_<num_blocks_; i_++){
+  for( int j = block_size*i_ + 1; j <= block_size*i_ + block_size; j++ ) {
     m_geometry->trio(j);
     
     for (int i = 0; i < m_geometry->jsno; i++ ) {
@@ -2086,6 +2104,18 @@ void nec_context::cmset( int64_t nrow, complex_array& in_cm, nec_float rkhx) {
       in_cm[(jss-1)+(ipr-1)*nrow] -= ( m_geometry->ax[i]+ m_geometry->cx[i])* zaj;
     }
   } /* for( j = 1; j <= n; j++ ) */
+}
+
+//print out the result 
+
+for(int i=0; i<row_; i++)
+{
+  for(int j =0; j<col_; j++){
+    cout<<in_cm[i*row_ + j]<<" ";
+  }
+  cout<<endl;
+}
+
   
   int m = m_geometry->m;
   if ( m != 0)  {
@@ -2453,7 +2483,8 @@ void nec_context::cmws( int j, int i1, int i2, complex_array& in_cm,
   } /* for( i = i1; i <= i2; i++ ) */
 }
 
-/*-----------------------------------------------------------------------*/
+
+///////////////////////////////// kaddyy ///////////////////////////
 
 /* cmww computes matrix elements for wire-wire interactions */
 void nec_context::cmww( int j, int i1, int i2, complex_array& in_cm,
@@ -2597,6 +2628,164 @@ void nec_context::cmww( int j, int i1, int i2, complex_array& in_cm,
 
   } /* for( i = i1-1; i < i2; i++ ) */
 }
+
+
+/*-----------------------------------------------------------------------*/
+
+/* cmww computes matrix elements for wire-wire interactions */
+// void nec_context::cmww( int j, int i1, int i2, complex_array& in_cm,
+//     int64_t nr, complex_array& cw, int64_t nw, int itrp){
+//   UNUSED(nw);
+//   int i, jx;
+//   nec_float xi, yi, zi, ai, cabi, sabi, salpi;
+//   nec_complex etk, ets, etc;
+  
+//   /* set source segment parameters */
+//   jx = j;
+//   j--;
+//   m_s= m_geometry->segment_length[j];
+//   m_b= m_geometry->segment_radius[j];
+//   xj= m_geometry->x[j];
+//   yj= m_geometry->y[j];
+//   zj= m_geometry->z[j];
+//   cabj= m_geometry->cab[j];
+//   sabj= m_geometry->sab[j];
+//   salpj= m_geometry->salp[j];
+  
+//   /* Decide whether ext. t.w. approx. can be used */
+
+//   if ( m_use_exk == true) {
+//     int ipr = m_geometry->icon1[j];
+// #if 0
+//     if (ipr > PCHCON) ind1 = 0; // trap bug also in original fortran
+//     else if (ipr == 0) ind1 = 1;
+//     else if ((ipr == jx) && ( cabj*cabj + sabj*sabj > 1.e-8))
+//             ind1=2;
+//     else if (ipr < 0) {
+//       ind1 = 2;
+//       int iprx= -ipr - 1;
+//       if ( m_geometry->icon1[iprx] == -jx )
+//         ind1 = m_geometry->test_ek_approximation(j,iprx);
+//     } else {  /* if ( ipr > 0 ) */
+//       if ( ipr != jx ) {
+//         ind1=2;
+//         int iprx = ipr-1;
+//         if ( m_geometry->icon2[iprx] == jx )
+//           ind1 = m_geometry->test_ek_approximation(j,iprx);
+//       }
+//       else if ( (cabj* cabj+ sabj* sabj) > 1.e-8)
+//         ind1=2;
+//       else
+//         ind1=0;
+//     } /* if ( ipr < 0 ) */
+// #endif
+//     {
+//       int iprx = std::abs(ipr) - 1;
+//       ind1 = 2;
+//       if (ipr > PCHCON)
+//         ind1 = 0;
+//       else if (ipr == 0)
+//         ind1 = 1;
+//       else if ((ipr == jx) && (cabj*cabj + sabj*sabj <= 1.e-8))
+//         ind1 = 0;
+//       else if ((ipr > 0) && (m_geometry->icon2[iprx] == jx))
+//         ind1 = m_geometry->test_ek_approximation(j, ipr - 1);
+//       else if ((ipr < 0) && (m_geometry->icon1[iprx] == -jx))
+//         ind1 = m_geometry->test_ek_approximation(j, -ipr - 1);
+//     }
+
+//     ipr = m_geometry->icon2[j];
+
+//     if (ipr > PCHCON) ind2 = 2; // trap bug also in original fortran
+//     else if (ipr == 0) ind2 = 1;
+//     else if (ipr < 0) {
+//       int iprx = -ipr - 1;
+//       if ( -m_geometry->icon2[iprx] != jx ) {
+//         ind2=2;
+//       } else {
+//         ind2 = m_geometry->test_ek_approximation(j,iprx);
+//       }
+//     } else { /* if ( ipr>= 0 ) */
+//       if ( ipr != jx ) {
+//         int iprx = ipr-1;
+//         if ( m_geometry->icon1[iprx] != jx ) {
+//           ind2=2;
+//         } else {
+//           ind2 = m_geometry->test_ek_approximation(j,iprx);
+//         }
+//       }
+//       else if ( (cabj* cabj+ sabj* sabj) > 1.e-8) {
+//         ind2=2;
+//       } else {
+//         ind2=0;
+//       }
+//     } /* if ( ipr < 0 ) */
+//   } /* if ( m_use_exk == true) */
+  
+//   /* observation loop */
+//   int ipr = -1;
+// for(int r=0; r<num_blocks_; r++){
+//   for( i = r*block_size + i1-1; i < r*block_size + block_size; i++){
+//     // if((i_%P)*Q+_x%Q == Myrank)
+//     ipr++;
+//     xi= m_geometry->x[i];
+//     yi= m_geometry->y[i];
+//     zi= m_geometry->z[i];
+//     ai= m_geometry->segment_radius[i];
+//     cabi= m_geometry->cab[i];
+//     sabi= m_geometry->sab[i];
+//     salpi= m_geometry->salp[i];
+
+//     efld( xi, yi, zi, ai, i != j);
+
+//     etk= exk* cabi+ eyk* sabi+ ezk* salpi;
+//     ets= exs* cabi+ eys* sabi+ ezs* salpi;
+//     etc= exc* cabi+ eyc* sabi+ ezc* salpi;
+
+//     /* fill matrix elements. element locations */
+//     /* determined by connection data. */
+
+//     /* normal fill */
+//     if ( itrp == 0) {
+//       for (int ij = 0; ij < m_geometry->jsno; ij++ ) {
+//         int _x = m_geometry->jco[ij]-1;
+//         in_cm[ipr+_x*nr] += etk* m_geometry->ax[ij]+ ets* m_geometry->bx[ij]+ etc* m_geometry->cx[ij];
+//       }
+//       continue;
+//     }
+
+//     /* transposed fill */
+//     if ( itrp != 2) {
+//       for (int ij = 0; ij < m_geometry->jsno; ij++ ) {
+//         int _x = m_geometry->jco[ij]-1;
+//         int b_j = _x/P;
+//         int _xb = _x - (b_j/Q)*(Q-1)*block_size;
+//         int iprb = ipr - (r/P)*(P-1)*block_size;
+//         if((i_%P)*Q+b_j%Q == Myrank)
+//           in_cm[_xb+iprb*(nr/Q)] += etk* m_geometry->ax[ij]+ ets* m_geometry->bx[ij]+ etc* m_geometry->cx[ij];
+//       }
+//       continue;
+//     }
+
+//     /* trans. fill for c(ww) - test for elements for d(ww)prime.  (=cw) */
+//     for (int ij = 0; ij < m_geometry->jsno; ij++ ) {
+//       int64_t _x = m_geometry->jco[ij]-1;
+//       int b_j = _x/P;
+//       int _xb = _x - (b_j/P)*(P-1)*block_size;
+//       int iprb = ipr - (r/P)*(P-1)*block_size;
+//       //i_ = b_i
+//       if ( _x < nr) {
+//         if((i_%P)*Q+b_j%Q == Myrank)
+//           in_cm[_xb+iprb*(nr/Q)] += etk* m_geometry->ax[ij]+ ets* m_geometry->bx[ij]+ etc* m_geometry->cx[ij];
+//       } else {
+//         _x -= nr;
+//           cw[_x+ipr*nr] += etk* m_geometry->ax[ij]+ ets* m_geometry->bx[ij]+ etc* m_geometry->cx[ij];
+//       }
+//     } /* for( ij = 0; ij < m_geometry->jsno; ij++ ) */
+
+//   } /* for( i = i1-1; i < i2; i++ ) */
+// }
+// }
 
 
 /*-----------------------------------------------------------------------*/

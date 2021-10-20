@@ -202,6 +202,9 @@ C
 */
 #include "math_util.h"
 #include <iostream>
+#include <mpich/mpi.h>
+#include <omp.h>
+#include <mkl.h>
 using namespace std;
 
 #include "nec_exception.h"
@@ -212,51 +215,60 @@ using namespace std;
 
 #ifdef NEC_ERROR_CHECK
 
-void to_octave(nec_complex& x)  {
+void to_octave(nec_complex &x)
+{
   cout << real(x) << " + " << imag(x) << "I";
 }
 
-void to_octave(int& x)  {
+void to_octave(int &x)
+{
   cout << x;
 }
 
-void to_octave(nec_complex* a, int n, int ndim)  {
+void to_octave(nec_complex *a, int n, int ndim)
+{
   cout << "[";
-  for (int row = 0; row < n; row++ )
+  for (int row = 0; row < n; row++)
   {
-    int64_t row_offset = row*ndim;
-    for (int i = 0; i < n; i++ )
+    int64_t row_offset = row * ndim;
+    for (int i = 0; i < n; i++)
     {
-      to_octave(a[i+row_offset]);
-      if (i < n-1)
+      to_octave(a[i + row_offset]);
+      if (i < n - 1)
         cout << ", ";
     }
-    if (row < n-1)
+    if (row < n - 1)
       cout << "; ";
   }
   cout << "];" << endl;
 }
 
-void to_octave(complex_array& a, int n, int ndim)  {
-  to_octave(a.data(),n,ndim);
+void to_octave(complex_array &a, int n, int ndim)
+{
+  to_octave(a.data(), n, ndim);
 }
 
-void to_octave(int* a, int n)  {
+void to_octave(int *a, int n)
+{
   cout << "[";
-  for (int i = 0; i < n; i++ )  {
+  for (int i = 0; i < n; i++)
+  {
     to_octave(a[i]);
-    if (i < n-1)
+    if (i < n - 1)
       cout << ", ";
   }
   cout << "];" << endl;
 }
 
-void to_octave(int_array& a, int n)  {
-  to_octave(a.data(),n);
+void to_octave(int_array &a, int n)
+{
+  to_octave(a.data(), n);
 }
 #endif /* NEC_ERROR_CHECK */
 
-
+int size_;
+int b_size_;
+int num_blocks;
 
 /*! \brief Solve The system of equations using Gaussian Elimination.
   Subroutine to factor a matrix into a unit lower triangular matrix 
@@ -268,104 +280,289 @@ void to_octave(int_array& a, int n)  {
   
   (matrix transposed.)
 */
-void lu_decompose_ge(nec_output_file& s_output, int64_t n, complex_array& a, int_array& ip, int64_t ndim)
+void lu_decompose_ge(nec_output_file &s_output, int64_t n, complex_array &a, int_array &ip, int64_t ndim)
 {
   DEBUG_TRACE("lu_decompose_ge(" << n << "," << ndim << ")");
-  
+
 #ifdef NEC_MATRIX_CHECK
   // Debug output to try and figure out the LAPACK stuff
   cout << "a = ";
-  to_octave(a,n,ndim);
+  to_octave(a, n, ndim);
 #endif
-  
+
   /* Allocate scratch memory */
   complex_array scm;
   scm.resize(n);
-  
+
   /* Un-transpose the matrix for Gauss elimination */
-  for (int i = 1; i < n; i++ )  {
+  for (int i = 1; i < n; i++)
+  {
     int64_t i_offset = i * ndim;
     int64_t j_offset = 0;
-    for (int j = 0; j < i; j++ ) {
-      nec_complex aij = a[i+j_offset]; 
-      a[j_offset +i] = a[j+i_offset];
-      a[i_offset+ j] = aij;
-      
+    for (int j = 0; j < i; j++)
+    {
+      nec_complex aij = a[i + j_offset];
+      a[j_offset + i] = a[j + i_offset];
+      a[i_offset + j] = aij;
+
       j_offset += ndim;
     }
   }
-  
-  bool iflg=false;
+
+  bool iflg = false;
   /* step 1 */
-  for (int r = 0; r < n; r++ )  {
-    int64_t r_offset = r*ndim;
-    
-    for (int k = 0; k < n; k++ )
-      scm[k]= a[k+r_offset];
-    
+  for (int r = 0; r < n; r++)
+  {
+    int64_t r_offset = r * ndim;
+
+    for (int k = 0; k < n; k++)
+      scm[k] = a[k + r_offset];
+
     /* steps 2 and 3 */
     int rm1 = r;
-    for (int j = 0; j < rm1; j++ )  {
-      int pj= ip[j]-1;
+    for (int j = 0; j < rm1; j++)
+    {
+      int pj = ip[j] - 1;
       nec_complex arj = scm[pj];
-      a[j+r_offset]= arj;
-      scm[pj]= scm[j];
-      int jp1 = j+1;
+      a[j + r_offset] = arj;
+      scm[pj] = scm[j];
+      int jp1 = j + 1;
 
-      int64_t j_offset = j*ndim;
-      for (int i = jp1; i < n; i++ )
-        scm[i] -= a[i+j_offset]* arj;
-
+      int64_t j_offset = j * ndim;
+      for (int i = jp1; i < n; i++)
+        scm[i] -= a[i + j_offset] * arj;
     }
-    
+
     /* step 4 */
     nec_float dmax = norm(scm[r]); //here we are assuming that the top right value is a max;
-    
-    int rp1 = r+1;
-    ip[r]= rp1;
-    for (int i = rp1; i < n; i++ )  {
+
+    int rp1 = r + 1;
+    ip[r] = rp1;
+    for (int i = rp1; i < n; i++)
+    {
       nec_float elmag = norm(scm[i]);
-      if ( elmag >= dmax)  {
+      if (elmag >= dmax)
+      {
         dmax = elmag;
-        ip[r] = i+1;  // set the permute array element
+        ip[r] = i + 1; // set the permute array element
       }
     }
-    
-    if ( dmax < 1.e-10)
-      iflg=true;
-    
-    int pr = ip[r]-1;
-    a[r+r_offset] = scm[pr];
+
+    if (dmax < 1.e-10)
+      iflg = true;
+
+    int pr = ip[r] - 1;
+    a[r + r_offset] = scm[pr];
     scm[pr] = scm[r];
-    
+
     /* step 5 */
-    if ( rp1 < n)  {
-      nec_complex arr = cplx_10() / a[r+r_offset];
-      
-      for (int i = rp1; i < n; i++ )
-        a[i+r_offset]= scm[i]* arr;
+    if (rp1 < n)
+    {
+      nec_complex arr = cplx_10() / a[r + r_offset];
+
+      for (int i = rp1; i < n; i++)
+        a[i + r_offset] = scm[i] * arr;
     }
-    
-    if ( true == iflg )  {
+
+    if (true == iflg)
+    {
       s_output.string("\n  PIVOT(");
       s_output.integer(r);
       s_output.string(")= ");
       s_output.real(dmax);
-      iflg=false;
+      iflg = false;
     }
   } /* for( r=0; r < n; r++ ) */
-  
 
 #ifdef NEC_MATRIX_CHECK
   cout << "solved = ";
-  to_octave(a,n,ndim);
+  to_octave(a, n, ndim);
 
   cout << "ip = ";
-  to_octave(ip,n);
+  to_octave(ip, n);
 #endif
-  
 }
 
+/*! \brief find a max block size between 64 and 100
+*/
+int find_b_size(int64_t n)
+{
+  int64_t max_block;
+  for (size_t factor = 4; factor <= 100; factor++)
+  {
+    if (n % factor == 0)
+      max_block = factor;
+  }
+  return max_block;
+}
+
+int find_max(complex_array &A, int k)
+{
+  int n = size_;
+  double imax = k;
+  auto max_pivot = norm(A[k * size_ + k]);
+  for (int i = k + 1; i < n; ++i)
+  {
+    auto a = norm(A[i * size_ + k]);
+    if (a > max_pivot)
+    {
+      max_pivot = a;
+      imax = i;
+    }
+  }
+
+  return imax;
+}
+
+void row_func(int64_t i, int64_t j, complex_array &a)
+{
+  for (int ii = i * b_size_; ii < (i * b_size_) + (b_size_ - 1); ii++)
+  {
+    for (int jj = ii + 1; jj < b_size_; jj++)
+    {
+      for (int kk = j * b_size_; kk < (j * b_size_) + b_size_; kk++)
+      {
+        a[jj * size_ + kk] = a[jj * size_ + kk] - (a[jj * size_ + ii] * a[ii * size_ + kk]);
+      }
+    }
+  }
+}
+
+void col_func(int64_t i, int64_t j, complex_array &a)
+{
+  //if (MKL_Complex8 *)(&a[index]) don't work i will fall back to the regular implementation.
+  MKL_Complex8 alpha = {1.0, 0};
+  int n = b_size_;
+  int lda = size_;
+  ctrsm("L", "L", "N", "N", &n, &n, &alpha, (MKL_Complex8 *)(&a[i * b_size_ * size_ + i * b_size_]), &lda, (MKL_Complex8 *)(&a[j * b_size_ * size_ + i * b_size_]), &lda);
+}
+
+// void diag_func(int64_t i,complex_array &a, complex_array &b){
+void diag_func(int64_t i, complex_array &a)
+{
+  for (int ii = i * b_size_; ii < (i * b_size_) + b_size_ - 1; ii++)
+  {
+
+    /*I will add pivoting tomorrow, today i just want to see this run correctly */
+
+    // auto imax = find_max(a, ii);
+    // if(norm(a[imax*size_ + ii]) == 0){
+    //   cout<<"A is not singular"<<endl;
+    //   return;
+    // }
+
+    // for(int i = ii; i<size_; i++){
+    // 	swap(a[ii*size_ + i],a[imax*size_ + i]);
+    // }
+    // // swap a bmatrix
+    // swap(b[ii],b[i]);
+
+    for (int jj = ii + 1; jj < (i * b_size_) + b_size_; jj++)
+    {
+      a[jj * size_ + ii] /= a[ii * size_ + ii];
+
+      for (int kk = ii + 1; kk < (i * b_size_) + b_size_; kk++)
+      {
+        a[jj * size_ + kk] = a[jj * size_ + kk] - (a[jj * size_ + ii] * a[ii * size_ + kk]);
+      }
+    }
+  }
+}
+
+void inner_func(int64_t i, int64_t j, int64_t k, complex_array &a)
+{
+  double alpha, beta;
+  alpha = -1.0;
+  beta = 1;
+  int ii = i * b_size_, jj = j * b_size_, kk = k * b_size_;
+  cblas_cgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, b_size_, b_size_, b_size_,
+              &alpha, &a[(jj * size_) + ii], size_, &a[(ii * size_) + kk], size_, &beta, &a[(jj * size_) + kk], size_);
+}
+
+//i need to initalize mpi,
+//i can just ask for my rank in the function instead of passing it
+//do the simplest thing to get this work, don't worry about the code cleaness
+void lu_decompose_new(nec_output_file &s_output, int64_t n, complex_array &a, int_array &ip, int64_t ndim)
+{
+  DEBUG_TRACE("lu_decompose_ge(" << n << "," << ndim << ")");
+
+#ifdef NEC_MATRIX_CHECK
+  // Debug output to try and figure out the LAPACK stuff
+  cout << "a = ";
+  to_octave(a, n, ndim);
+#endif
+
+  //quick fix
+  for (int64_t r = 0; r < n; r++)
+  {
+    int rp1 = r + 1;
+    ip[r] = rp1;
+  }
+  int nprocs, myrank;
+  MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+  MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
+  b_size_ = find_b_size(n);
+  cout << "block_size: " << b_size_ << " n is: " << n << endl;
+  size_ = n;
+  num_blocks = n / b_size_;
+
+  MPI_Datatype blockType;
+  MPI_Type_vector(b_size_, b_size_, size_, MPI_CXX_DOUBLE_COMPLEX, &blockType);
+  MPI_Type_commit(&blockType);
+
+  MPI_Request request[b_size_ * b_size_ * b_size_];
+  for (int64_t i = 0; i < num_blocks; i++)
+  {
+
+    diag_func(i, a); //
+    int count = 0;
+#pragma omp parallel for ordered shared(request)
+    for (int64_t j = i + 1; j < num_blocks; j++)
+    {
+      if ((j - 1) % nprocs == myrank)
+      {
+        col_func(i, j, a);
+        row_func(i, j, a);
+      }
+      // brodcasting rows
+#pragma omp ordered
+#pragma omp critical
+      {
+        MPI_Ibcast(&a[i * size_ * b_size_ + j * b_size_], 1, blockType, (j - 1) % nprocs, MPI_COMM_WORLD, &request[count++]); //row
+        MPI_Ibcast(&a[j * size_ * b_size_ + i * b_size_], 1, blockType, (j - 1) % nprocs, MPI_COMM_WORLD, &request[count++]); //column
+      }
+      //======================================================================
+    }
+
+    MPI_Waitall(count, request, MPI_STATUS_IGNORE);
+
+    // this solution is temperary, only for four nodes.
+    count = 0;
+    for (int64_t j = i + 1; j < num_blocks; j++)
+    {
+#pragma omp parallel for ordered
+      for (int64_t k = i + 1; k < num_blocks; k++)
+      {
+        if ((k - 1) % nprocs == myrank)
+        {
+          inner_func(i, j, k, a);
+        }
+        // #pragma omp ordered
+        // 				{
+        // 					if (j == i+1 && k== i+1)
+        // 						MPI_Ibcast(&a[j * size_ * b_size_ + k * b_size_], 1, blockType, (k - 1) % nprocs, MPI_COMM_WORLD, &request[count++]);
+        // 				}
+      }
+      // MPI_Waitall(count, request, MPI_STATUS_IGNORE);
+      count = 0;
+    }
+  }
+
+  //I have to gether the result back, but for now it doesn't matter for now...
+
+  MPI_Finalize();
+  cout << "LU decomposition exited correctly" << endl;
+}
 
 /*! \brief Solve system of linear equations
     Subroutine to solve the matrix equation lu*x=b where l is a unit
@@ -373,37 +570,68 @@ void lu_decompose_ge(nec_output_file& s_output, int64_t n, complex_array& a, int
     of which are stored in a.  The RHS vector b is input and the
     solution is returned through vector b.   (matrix transposed)
 */
-void solve_ge( int64_t n, complex_array& a, int_array& ip,
-    complex_array& b, int64_t ndim )
+void solve_ge(int64_t n, complex_array &a, int_array &ip,
+              complex_array &b, int64_t ndim)
 {
   DEBUG_TRACE("solve(" << n << "," << ndim << ")");
   complex_array y(n);
-  
+
   /* forward substitution */
-  for (int64_t i = 0; i < n; i++ )  {
-    int64_t pivot_index = ip[i]-1;
-    y[i]= b[pivot_index];
-    b[pivot_index]= b[i];
-    int64_t ip1= i+1;
-    
-    int64_t i_offset = i*ndim;
-    for (int64_t j = ip1; j < n; j++ )
-      b[j] -= a[j+i_offset] * y[i];
+  for (int64_t i = 0; i < n; i++)
+  {
+    int64_t pivot_index = ip[i] - 1;
+    y[i] = b[pivot_index];
+    b[pivot_index] = b[i]; // == cause of segmentation error..
+    int64_t ip1 = i + 1;
+
+    int64_t i_offset = i * ndim;
+    for (int64_t j = ip1; j < n; j++)
+      b[j] -= a[i_offset + j] * y[i];
   }
-  
+
   /* backward substitution */
-  for (int64_t k = 0; k < n; k++ )  {
-    int64_t i= n-k-1;
+  for (int64_t k = 0; k < n; k++)
+  {
+    int64_t i = n - k - 1;
     nec_complex sum(cplx_00());
-    int64_t ip1= i+1;
-    
-    for (int64_t j = ip1; j < n; j++ )
-      sum += a[i+j*ndim]* b[j];
-    
-    b[i] = (y[i]- sum) / a[i+i*ndim];
+    int64_t ip1 = i + 1;
+
+    for (int64_t j = ip1; j < n; j++)
+      sum += a[i + j * ndim] * b[j];
+
+    b[i] = (y[i] - sum) / a[i + i * ndim];
   }
 }
 
+// void solve_ge_new(int64_t n, complex_array &a, int_array &ip,
+//               complex_array &b, int64_t ndim){
+
+// DEBUG_TRACE("solve(" << n << "," << ndim << ")");
+//   complex_array y(n);
+
+//   /* forward substitution */
+//   complex_array y[y];
+//   double suma;
+//   for(int64_t i=0; i<size_;i++){
+//     suma =0 ;
+//     for(int63_t j=0; j<i; j=j++){
+//       suma+=
+//     }
+//   }
+
+//   /* backward substitution */
+//   for (int64_t k = 0; k < n; k++)
+//   {
+//     int64_t i = n - k - 1;
+//     nec_complex sum(cplx_00());
+//     int64_t ip1 = i + 1;
+
+//     for (int64_t j = ip1; j < n; j++)
+//       sum += a[i + j * ndim] * b[j];
+
+//     b[i] = (y[i] - sum) / a[i + i * ndim];
+//   }
+// }
 
 #if LAPACK
 
@@ -414,7 +642,7 @@ extern "C"
 
 /*! \brief Use lapack to perform LU decomposition
 */
-void lu_decompose_lapack(nec_output_file& s_output,  int64_t n, complex_array& a_in, int_array& ip, int64_t ndim)
+void lu_decompose_lapack(nec_output_file &s_output, int64_t n, complex_array &a_in, int_array &ip, int64_t ndim)
 {
   UNUSED(s_output);
   DEBUG_TRACE("lu_decompose_lapack(" << n << "," << ndim << ")");
@@ -422,23 +650,24 @@ void lu_decompose_lapack(nec_output_file& s_output,  int64_t n, complex_array& a
 
 #ifdef NEC_MATRIX_CHECK
   cout << "atlas_a = ";
-  to_octave(a_in,n,ndim);
+  to_octave(a_in, n, ndim);
 #endif
 
   /* Un-transpose the matrix for Gauss elimination */
-  for (int i = 1; i < n; i++ )  {
+  for (int i = 1; i < n; i++)
+  {
     int64_t i_offset = i * ndim;
     int64_t j_offset = 0;
-    for (int64_t j = 0; j < i; j++ )  {
-      nec_complex aij = a_in[i+j_offset];
-      a_in[i+j_offset] = a_in[j+i_offset];
-      a_in[j+i_offset] = aij;
-      
+    for (int64_t j = 0; j < i; j++)
+    {
+      nec_complex aij = a_in[i + j_offset];
+      a_in[i + j_offset] = a_in[j + i_offset];
+      a_in[j + i_offset] = aij;
+
       j_offset += ndim;
     }
   }
-  
-          
+
   /* Now call the LAPACK LU-Decomposition
   ZGETRF computes an LU factorization of a general M-by-N matrix A
   *  using partial pivoting with row interchanges.
@@ -478,26 +707,26 @@ void lu_decompose_lapack(nec_output_file& s_output,  int64_t n, complex_array& a
   *                singular, and division by zero will occur if it is used
   *                to solve a system of equations.
   */
-  int32_t info = clapack_zgetrf (CblasColMajor, int32_t(n), int32_t(n), 
-          (void*) a_in.data(), int32_t(ndim), ip.data());
-  
-  if (0 != info) {
+  int32_t info = clapack_zgetrf(CblasColMajor, int32_t(n), int32_t(n),
+                                (void *)a_in.data(), int32_t(ndim), ip.data());
+
+  if (0 != info)
+  {
     /*
       The factorization has been completed, but the factor U is exactly singular,
       and division by zero will occur if it is used to solve a system of equations. 
     */
-    throw new nec_exception("nec++:  LU Decomposition Failed: ",info);
+    throw new nec_exception("nec++:  LU Decomposition Failed: ", info);
   }
-  
-  
+
 #ifdef NEC_MATRIX_CHECK
   cout << "atlas_solved = ";
-  to_octave(a_in,n,ndim);
+  to_octave(a_in, n, ndim);
 
   cout << "atlas_ip = ";
-  to_octave(ip,n);
+  to_octave(ip, n);
 #endif
-} 
+}
 
 /*! \brief Solve system of linear equations
   Subroutine to solve the matrix equation lu*x=b where l is a unit
@@ -505,20 +734,21 @@ void lu_decompose_lapack(nec_output_file& s_output,  int64_t n, complex_array& a
   of which are stored in a.  the rhs vector b is input and the
   solution is returned through vector b.   (matrix transposed)
 */
-void solve_lapack( int64_t n, complex_array& a, int_array& ip,
-    complex_array& b, int64_t ndim )
+void solve_lapack(int64_t n, complex_array &a, int_array &ip,
+                  complex_array &b, int64_t ndim)
 {
   DEBUG_TRACE("solve_lapack(" << n << "," << ndim << ")");
 
-  int info = clapack_zgetrs (CblasColMajor, CblasNoTrans, 
-    static_cast<int>(n), 1, (void*) a.data(), static_cast<int>(ndim), ip.data(), b.data(), static_cast<int>(n));
-  
-  if (0 != info) {
+  int info = clapack_zgetrs(CblasColMajor, CblasNoTrans,
+                            static_cast<int>(n), 1, (void *)a.data(), static_cast<int>(ndim), ip.data(), b.data(), static_cast<int>(n));
+
+  if (0 != info)
+  {
     /*
       The factorization has been completed, but the factor U is exactly singular,
       and division by zero will occur if it is used to solve a system of equations. 
     */
-    throw new nec_exception("nec++: Solving Failed: ",info);
+    throw new nec_exception("nec++: Solving Failed: ", info);
   }
 }
 
@@ -529,8 +759,7 @@ void solve_lapack( int64_t n, complex_array& a, int_array& ip,
 #include <Eigen/Dense>
 using namespace Eigen;
 
-
-void lu_decompose_eigen(nec_output_file& s_output,  int64_t n, complex_array& a_in, int_array& ip, int64_t ndim)
+void lu_decompose_eigen(nec_output_file &s_output, int64_t n, complex_array &a_in, int_array &ip, int64_t ndim)
 {
   UNUSED(s_output);
   DEBUG_TRACE("lu_decompose_eigen(" << n << "," << ndim << ")");
@@ -538,38 +767,37 @@ void lu_decompose_eigen(nec_output_file& s_output,  int64_t n, complex_array& a_
 
 #ifdef NEC_MATRIX_CHECK
   cout << "eigen_a = ";
-  to_octave(a_in,n,ndim);
+  to_octave(a_in, n, ndim);
 #endif
 
   /* Un-transpose the matrix for Gauss elimination */
-  for (int i = 1; i < n; i++ )  {
+  for (int i = 1; i < n; i++)
+  {
     int i_offset = i * ndim;
     int j_offset = 0;
-    for (int j = 0; j < i; j++ )  {
-      nec_complex aij = a_in[i+j_offset];
-      a_in[i+j_offset] = a_in[j+i_offset];
-      a_in[j+i_offset] = aij;
-      
+    for (int j = 0; j < i; j++)
+    {
+      nec_complex aij = a_in[i + j_offset];
+      a_in[i + j_offset] = a_in[j + i_offset];
+      a_in[j + i_offset] = aij;
+
       j_offset += ndim;
     }
   }
 
-  
   Eigen::PartialPivLU<MatrixXc> lu = A.partialPivLu();
 
   Eigen::MatrixXc X = lu.matrixLU();
-  ipiv = lu.permutationP();  
-  
+  ipiv = lu.permutationP();
+
 #ifdef NEC_MATRIX_CHECK
   cout << "atlas_solved = ";
-  to_octave(a_in,n,ndim);
+  to_octave(a_in, n, ndim);
 
   cout << "atlas_ip = ";
-  to_octave(ip,n);
+  to_octave(ip, n);
 #endif
 }
-
-
 
 /*! \brief Solve system of linear equations
   Subroutine to solve the matrix equation lu*x=b where l is a unit
@@ -577,20 +805,20 @@ void lu_decompose_eigen(nec_output_file& s_output,  int64_t n, complex_array& a_
   of which are stored in a.  the rhs vector b is input and the
   solution is returned through vector b.   (matrix transposed)
 */
-void solve_eigen( int64_t n, complex_array& a, int_array& ip,
-    complex_array& b, int64_t ndim )
+void solve_eigen(int64_t n, complex_array &a, int_array &ip,
+                 complex_array &b, int64_t ndim)
 {
   DEBUG_TRACE("solve_eigen(" << n << "," << ndim << ")");
 
-  Eigen::MatrixXc soln = a.solve( b );
+  Eigen::MatrixXc soln = a.solve(b);
 
-  for (int64_t i=0;i<ndim;i++)
+  for (int64_t i = 0; i < ndim; i++)
     b[i] = soln[i];
 }
 
 #endif /* EIGEN_LU */
 
-void lu_decompose(nec_output_file& s_output, int64_t n, complex_array& a, int_array& ip, int64_t ndim)
+void lu_decompose(nec_output_file &s_output, int64_t n, complex_array &a, int_array &ip, int64_t ndim)
 {
 #if LAPACK
   return lu_decompose_lapack(s_output, n, a, ip, ndim);
@@ -599,7 +827,7 @@ void lu_decompose(nec_output_file& s_output, int64_t n, complex_array& a, int_ar
 #endif
 }
 
-void solve( int64_t n, complex_array& a, int_array& ip, complex_array& b, int64_t ndim )
+void solve(int64_t n, complex_array &a, int_array &ip, complex_array &b, int64_t ndim)
 {
 #if LAPACK
   return solve_lapack(n, a, ip, b, ndim);
@@ -619,30 +847,32 @@ void solve( int64_t n, complex_array& a, int_array& ip, complex_array& b, int64_
   If no symmetry [nrow = np], the routine is called to LU decompose the
   complete matrix.
 */
-void factrs(nec_output_file& s_output,  int64_t np, int64_t nrow, complex_array& a, int_array& ip )
+void factrs(nec_output_file &s_output, int64_t np, int64_t nrow, complex_array &a, int_array &ip)
 {
   DEBUG_TRACE("factrs(" << np << "," << nrow << ")");
-  if (nrow == np) { // no symmetry
-    lu_decompose(s_output,  np, a, ip, nrow );
+  if (nrow == np)
+  { // no symmetry
+    lu_decompose(s_output, np, a, ip, nrow);
+    // lu_decompose_new(s_output, np, a, ip, nrow); /* kaddy */
     return;
   }
-  
+
   int num_symmetric_modes = static_cast<int>(nrow / np);
   DEBUG_TRACE("\tnum_symmetric_modes = " << num_symmetric_modes);
-  
-  for (int mode = 0; mode < num_symmetric_modes; mode++ ) {
+
+  for (int mode = 0; mode < num_symmetric_modes; mode++)
+  {
     int64_t mode_offset = mode * np;
-    
-    complex_array a_temp = a.segment(mode_offset, a.size()-mode_offset);
-    int_array ip_temp = ip.segment(mode_offset, ip.size()-mode_offset);
-    
-    lu_decompose(s_output,  np, a_temp, ip_temp, nrow );
+
+    complex_array a_temp = a.segment(mode_offset, a.size() - mode_offset);
+    int_array ip_temp = ip.segment(mode_offset, ip.size() - mode_offset);
+
+    lu_decompose_new(s_output, np, a_temp, ip_temp, nrow); /* kaddy */
+    // lu_decompose(s_output, np, a_temp, ip_temp, nrow);
   }
 }
 
 /*-----------------------------------------------------------------------*/
-
-
 
 /**
   Subroutine solves, for symmetric structures, handles the
@@ -651,154 +881,175 @@ void factrs(nec_output_file& s_output,  int64_t np, int64_t nrow, complex_array&
   \param neq number of equations?
   \param nrh dimension of right hand  vector?
 */
-void solves(complex_array& a, int_array& ip, complex_array& b, int64_t neq,
-      int64_t nrh, int64_t np, int64_t n, int64_t mp, int64_t m, int64_t nop, 
-      complex_array& symmetry_array)
+void solves(complex_array &a, int_array &ip, complex_array &b, int64_t neq,
+            int64_t nrh, int64_t np, int64_t n, int64_t mp, int64_t m, int64_t nop,
+            complex_array &symmetry_array)
 {
   DEBUG_TRACE("solves(" << neq << "," << nrh << "," << np << "," << n << ")");
   DEBUG_TRACE("      ( nop=" << nop << ")");
-  
+
   /* Allocate some scratch memory */
   complex_array scm;
-  scm.resize(n + 2*m);
-  
-  int64_t npeq= np+ 2*mp;
+  scm.resize(n + 2 * m);
+
+  int64_t npeq = np + 2 * mp;
   nec_float fnop = nec_float(nop);
-  nec_float fnorm = 1.0/ fnop;
-  int64_t nrow= neq;
-  
-  if ( nop != 1) {
-    for (int ic = 0; ic < nrh; ic++ ) {
-      int64_t column_offset = ic*neq;
-      if ( (n != 0) && (m != 0) ) {
-        for (int64_t i = 0; i < neq; i++ )
-          scm[i]= b[i+column_offset];
+  nec_float fnorm = 1.0 / fnop;
+  int64_t nrow = neq;
 
-        int64_t j= np-1;
+  if (nop != 1)
+  {
+    for (int ic = 0; ic < nrh; ic++)
+    {
+      int64_t column_offset = ic * neq;
+      if ((n != 0) && (m != 0))
+      {
+        for (int64_t i = 0; i < neq; i++)
+          scm[i] = b[i + column_offset];
 
-        for (int64_t k = 0; k < nop; k++ ) {
-          if ( k != 0 ) {
-            int64_t ia= np-1;
-            for (int64_t i = 0; i < np; i++ ) {
+        int64_t j = np - 1;
+
+        for (int64_t k = 0; k < nop; k++)
+        {
+          if (k != 0)
+          {
+            int64_t ia = np - 1;
+            for (int64_t i = 0; i < np; i++)
+            {
               ia++;
               j++;
-              b[j+column_offset]= scm[ia];
+              b[j + column_offset] = scm[ia];
             }
 
-            if ( k == (nop-1) )
+            if (k == (nop - 1))
               continue;
           } /* if ( k != 0 ) */
-  
-          int64_t mp2 = 2*mp;
-          int64_t ib= n-1;
-          for (int64_t i = 0; i < mp2; i++ ) {
+
+          int64_t mp2 = 2 * mp;
+          int64_t ib = n - 1;
+          for (int64_t i = 0; i < mp2; i++)
+          {
             ib++;
             j++;
-            b[j+column_offset]= scm[ib];
+            b[j + column_offset] = scm[ib];
           }
         } /* for( k = 0; k < nop; k++ ) */
-      } /* if ( (n != 0) && (m != 0) ) */
+      }   /* if ( (n != 0) && (m != 0) ) */
 
       /* transform matrix eq. rhs vector according to symmetry modes */
-      for (int64_t i = 0; i < npeq; i++ ) {
-        for (int64_t k = 0; k < nop; k++ ) {
-          int64_t ia= i+ k* npeq;
-          scm[k]= b[ia+column_offset];
+      for (int64_t i = 0; i < npeq; i++)
+      {
+        for (int64_t k = 0; k < nop; k++)
+        {
+          int64_t ia = i + k * npeq;
+          scm[k] = b[ia + column_offset];
         }
 
         nec_complex sum_normal(scm[0]);
-        for (int64_t k = 1; k < nop; k++ )
+        for (int64_t k = 1; k < nop; k++)
           sum_normal += scm[k];
 
-        b[i+column_offset]= sum_normal * fnorm;
+        b[i + column_offset] = sum_normal * fnorm;
 
-        for (int64_t k = 1; k < nop; k++ ) {
-          int64_t ia= i+ k* npeq;
+        for (int64_t k = 1; k < nop; k++)
+        {
+          int64_t ia = i + k * npeq;
           nec_complex sum(scm[0]);
-  
-          for (int64_t j = 1; j < nop; j++ )
-            sum += scm[j]* conj( symmetry_array[k+j*nop]);
-  
-          b[ia+column_offset]= sum* fnorm;
+
+          for (int64_t j = 1; j < nop; j++)
+            sum += scm[j] * conj(symmetry_array[k + j * nop]);
+
+          b[ia + column_offset] = sum * fnorm;
         }
       } /* for( i = 0; i < npeq; i++ ) */
-    } /* for( ic = 0; ic < nrh; ic++ ) */
-  } /* if ( nop != 1) */
+    }   /* for( ic = 0; ic < nrh; ic++ ) */
+  }     /* if ( nop != 1) */
 
   /* solve each mode equation */
-  for (int64_t kk = 0; kk < nop; kk++ ) {
-    int64_t ia= kk* npeq;
+  for (int64_t kk = 0; kk < nop; kk++)
+  {
+    int64_t ia = kk * npeq;
 
-    for (int64_t ic = 0; ic < nrh; ic++ ) {
-      int64_t column_offset = ic*neq;
-      complex_array a_sub = a.segment(ia, a.size()-ia);
-      complex_array b_sub = b.segment(ia+column_offset, b.size() - (ia+column_offset) );
-      int_array ip_sub = ip.segment(ia, ip.size()-ia);
-      solve( npeq, a_sub, ip_sub, b_sub, nrow );
+    for (int64_t ic = 0; ic < nrh; ic++)
+    {
+      int64_t column_offset = ic * neq;
+      complex_array a_sub = a.segment(ia, a.size() - ia);
+      complex_array b_sub = b.segment(ia + column_offset, b.size() - (ia + column_offset));
+      int_array ip_sub = ip.segment(ia, ip.size() - ia);
+      solve(npeq, a_sub, ip_sub, b_sub, nrow);
     }
   } /* for( kk = 0; kk < nop; kk++ ) */
-  
-  if ( nop == 1) {
+
+  if (nop == 1)
+  {
     return;
   }
-  
+
   /* inverse transform the mode solutions */
-  for (int64_t ic = 0; ic < nrh; ic++ ) {
-    int64_t column_offset = ic*neq;
-    for (int64_t i = 0; i < npeq; i++ ) {
-      for (int64_t k = 0; k < nop; k++ ) {
-        int64_t ia= i+ k* npeq;
-        scm[k]= b[ia+column_offset];
+  for (int64_t ic = 0; ic < nrh; ic++)
+  {
+    int64_t column_offset = ic * neq;
+    for (int64_t i = 0; i < npeq; i++)
+    {
+      for (int64_t k = 0; k < nop; k++)
+      {
+        int64_t ia = i + k * npeq;
+        scm[k] = b[ia + column_offset];
       }
 
       nec_complex sum_normal(scm[0]);
-      for (int64_t k = 1; k < nop; k++ )
+      for (int64_t k = 1; k < nop; k++)
         sum_normal += scm[k];
 
-      b[i+column_offset]= sum_normal;
-      
-      for (int64_t k = 1; k < nop; k++ ) {
-        int64_t ia= i+ k* npeq;
-        
+      b[i + column_offset] = sum_normal;
+
+      for (int64_t k = 1; k < nop; k++)
+      {
+        int64_t ia = i + k * npeq;
+
         nec_complex sum(scm[0]);
 
-        for (int64_t j = 1; j < nop; j++ )
-          sum += scm[j]* symmetry_array[k+j*nop];
+        for (int64_t j = 1; j < nop; j++)
+          sum += scm[j] * symmetry_array[k + j * nop];
 
-        b[ia+column_offset]= sum;
+        b[ia + column_offset] = sum;
       }
     } /* for( i = 0; i < npeq; i++ ) */
 
-    if ( (n == 0) || (m == 0) )
+    if ((n == 0) || (m == 0))
       continue;
 
-    for (int64_t i = 0; i < neq; i++ )
-            scm[i]= b[i+column_offset];
+    for (int64_t i = 0; i < neq; i++)
+      scm[i] = b[i + column_offset];
 
-    int64_t j = np-1;
+    int64_t j = np - 1;
 
-    for (int64_t k = 0; k < nop; k++ ) {
-      if ( k != 0 )  {
-        int64_t ia = np-1;
-        for (int64_t i = 0; i < np; i++ ) {
+    for (int64_t k = 0; k < nop; k++)
+    {
+      if (k != 0)
+      {
+        int64_t ia = np - 1;
+        for (int64_t i = 0; i < np; i++)
+        {
           ia++;
           j++;
-          b[ia+column_offset]= scm[j];
+          b[ia + column_offset] = scm[j];
         }
 
-        if ( k == nop)
+        if (k == nop)
           continue;
       } /* if ( k != 0 ) */
 
-      int64_t ib = n-1;
-      int64_t mp2 = 2* mp;
-      for (int64_t i = 0; i < mp2; i++ ) {
+      int64_t ib = n - 1;
+      int64_t mp2 = 2 * mp;
+      for (int64_t i = 0; i < mp2; i++)
+      {
         ib++;
         j++;
-        b[ib+column_offset]= scm[j];
+        b[ib + column_offset] = scm[j];
       }
     } /* for( k = 0; k < nop; k++ ) */
-  } /* for( ic = 0; ic < nrh; ic++ ) */
+  }   /* for( ic = 0; ic < nrh; ic++ ) */
 }
 
 /*-----------------------------------------------------------------------*/
@@ -806,26 +1057,27 @@ void solves(complex_array& a, int_array& ip, complex_array& b, int64_t neq,
 void test(
     nec_float f1r, nec_float f2r, nec_float *tr,
     nec_float f1i, nec_float f2i, nec_float *ti,
-    nec_float dmin )
+    nec_float dmin)
 {
-  static nec_float _min_val =  1.0e-37;
-  
-  nec_float den = fabs( f2r);
-  nec_float temp_tr = fabs( f2i);
-  
-  if( den < temp_tr)
+  static nec_float _min_val = 1.0e-37;
+
+  nec_float den = fabs(f2r);
+  nec_float temp_tr = fabs(f2i);
+
+  if (den < temp_tr)
     den = temp_tr;
-  if( den < dmin)
+  if (den < dmin)
     den = dmin;
-  
-  if( den < _min_val)  {
+
+  if (den < _min_val)
+  {
     *tr = 0.0;
     *ti = 0.0;
     return;
   }
-  
-  *tr= fabs((f1r - f2r)/ den);
-  *ti= fabs((f1i - f2i)/ den); 
+
+  *tr = fabs((f1r - f2r) / den);
+  *ti = fabs((f1i - f2i) / den);
 }
 
 /**
@@ -833,18 +1085,18 @@ void test(
   This tests only one number. It is a special case of the
   test() function above.
 */
-nec_float test_simple( nec_float f1r, nec_float f2r, nec_float dmin )
+nec_float test_simple(nec_float f1r, nec_float f2r, nec_float dmin)
 {
-  static nec_float _min_val =  1.0e-37;
-  
+  static nec_float _min_val = 1.0e-37;
+
   nec_float den = fabs(f2r);
-  
-  if( den < dmin)
-          den = dmin;
+
+  if (den < dmin)
+    den = dmin;
   if (den < _min_val)
   {
-          return 0.0;
+    return 0.0;
   }
-  
-  return fabs((f1r - f2r) / den);  
+
+  return fabs((f1r - f2r) / den);
 }

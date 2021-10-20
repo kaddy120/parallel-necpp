@@ -22,6 +22,15 @@
 #include "math_util.h"
 #include "nec_output.h"
 
+
+template<class T>
+int find_max(T* A, int k);
+
+void row_func(int64_t i, int64_t j, complex_array &a);
+void col_func(int64_t i, int64_t j, complex_array &a);
+void inner_func(int64_t i, int64_t j, int64_t k, complex_array &a);
+void lu_decompose_new(nec_output_file &s_output, int64_t n, complex_array &a, complex_array &b, int64_t ndim);
+
 /** \brief LU that uses either lapack or built in
  * */
 void lu_decompose(nec_output_file& s_output, int64_t n, complex_array& a, int_array& ip, int64_t ndim);
@@ -39,7 +48,6 @@ void solve_ge( int64_t n, complex_array& a, int_array& ip, complex_array& b, int
 void lu_decompose_lapack(nec_output_file& s_output, int64_t n, complex_array& a, int_array& ip, int64_t ndim);
 void solve_lapack( int64_t n, complex_array& a, int_array& ip, complex_array& b, int64_t ndim );
 #endif
-
 
 void factrs(nec_output_file& s_output,  int64_t np, int64_t nrow, complex_array& a, int_array& ip );
 void solves(complex_array& a, int_array& ip, complex_array& b, int64_t neq,
