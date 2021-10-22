@@ -59,7 +59,7 @@ CPP_SRC  = test_cpp.cpp
 CPP_OBJS = $(CPP_SRC:.cpp=.o)
 
 # CXXFLAGS=-I ../src/ -I .. -O2 -Wall
-CXXFLAGS=-g -I ../src/ -I .. -L$(MKL_LIB_DIR) -I$(MKL_INCLUDE_DIR) -Wall -fopenmp -lmkl_intel_lp64 -lmkl_core -lmkl_gnu_thread -lpthread -lm -ldl -lmpi
+CXXFLAGS= -I ../src/ -I .. -L$(MKL_LIB_DIR) -I$(MKL_INCLUDE_DIR) -Wall -fopenmp -lmkl_intel_lp64 -lmkl_core -lmkl_gnu_thread -lpthread -lm -ldl -lmpi
 
 test_cpp: ${CPP_OBJS} ${NECPP_OBJS}
 	g++ ${CCCALLFLAGS} -o test_cpp ${CPP_OBJS} ${NECPP_OBJS} ${CXXFLAGS}

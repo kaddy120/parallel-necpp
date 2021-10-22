@@ -31,9 +31,26 @@ void col_func(int64_t i, int64_t j, complex_array &a);
 void inner_func(int64_t i, int64_t j, int64_t k, complex_array &a);
 void lu_decompose_new(nec_output_file &s_output, int64_t n, complex_array &a, complex_array &b, int64_t ndim);
 
+/* ------------ cyclical function ------------------ */
+// void row_func_c(int64_t i, int64_t j);
+// void col_func_c(int64_t i, int64_t j);
+// void inner_func_c(int64_t i, int64_t j, int k);
+// void diag_func_c(double *TheMatrixD, double *b, int i);
+// void Copy_diagonal(double *TheMatrixD, double *DiagMatrix, const int64_t& i);
+// void LU_decompose_c(nec_output_file &s_output, int64_t n, complex_array &a, complex_array &b, int64_t ndim);
+
+
+
+
+
+
+
+
+
+
 /** \brief LU that uses either lapack or built in
  * */
-void lu_decompose(nec_output_file& s_output, int64_t n, complex_array& a, int_array& ip, int64_t ndim);
+void lu_decompose(nec_output_file &s_output, int64_t n, complex_array &a, int_array &ip, int64_t ndim);
 void solve( int64_t n, complex_array& a, int_array& ip, complex_array& b, int64_t ndim );
 
 /** \brief LU that uses built in functions (no library dependency)

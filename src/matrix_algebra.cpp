@@ -266,9 +266,6 @@ void to_octave(int_array &a, int n)
 }
 #endif /* NEC_ERROR_CHECK */
 
-int size_;
-int b_size_;
-int num_blocks;
 
 /*! \brief Solve The system of equations using Gaussian Elimination.
   Subroutine to factor a matrix into a unit lower triangular matrix 
@@ -385,6 +382,12 @@ void lu_decompose_ge(nec_output_file &s_output, int64_t n, complex_array &a, int
 
 /*! \brief find a max block size between 64 and 100
 */
+
+int size_;
+int b_size_;
+int num_blocks;
+
+
 int find_b_size(int64_t n)
 {
   int64_t max_block;
@@ -484,7 +487,7 @@ void inner_func(int64_t i, int64_t j, int64_t k, complex_array &a)
 //do the simplest thing to get this work, don't worry about the code cleaness
 void lu_decompose_new(nec_output_file &s_output, int64_t n, complex_array &a, int_array &ip, int64_t ndim)
 {
-  DEBUG_TRACE("lu_decompose_ge(" << n << "," << ndim << ")");
+DEBUG_TRACE("lu_decompose_ge(" << n << "," << ndim << ")");
 
 #ifdef NEC_MATRIX_CHECK
   // Debug output to try and figure out the LAPACK stuff
@@ -563,6 +566,173 @@ void lu_decompose_new(nec_output_file &s_output, int64_t n, complex_array &a, in
   MPI_Finalize();
   cout << "LU decomposition exited correctly" << endl;
 }
+
+
+/* ---------- cyclical decomposition function implementation -------------- */
+
+// int size_;
+// int b_size_;
+// int num_blocks;
+// int64_t Q = 4; 
+// int64_t P = 4; 
+// int64_t ncols = size_/Q;
+// int64_t nrows = size_/P;
+
+// complex_array* TheMatrix;
+// complex_array* RowFinished = (complex_array*)malloc(size_*b_size_*sizeof(complex_array)); /* The matrix to hold rows after multiplying with diagonal LU */
+// complex_array* ColFinished = (complex_array*)malloc(size_*b_size_*sizeof(complex_array));
+// complex_array* TheMatrixD[nrows*ncols*sizeof(complex_array));
+// complex_array* DiagMatrix = (complex_array*)malloc(b_size_*b_size_*sizeof(complex_array));
+
+// complex_array* b;
+
+// void row_func_c(int64_t i, int64_t j, complex_array& a, complex_array& diagArray)
+// {
+//     //i/P*b_size_ & j/Q*P_size_
+// 	for (int64_t ii = i/P * b_size_; ii < (i/P * b_size_) + (b_size_ - 1); ii++)
+// 	{
+// 		for (int64_t jj = ii + 1; jj < b_size_; jj++)
+// 		{
+// 			for (int64_t kk = j/Q * b_size_; kk < (j/Q * b_size_) + b_size_; kk++)
+// 			{
+// 				a[jj*size_ + kk] = a[jj*size_ + kk] - (diagArray[jj*size_ + ii] * a[ii*size_ + kk]);
+// 			}
+// 		}
+// 	}
+// }
+
+// void col_func_c(int i, int j, complex_array& a)
+// {
+//   int lda = size_;
+  
+//    MKL_Complex8 alpha = {1.0, 0};
+// 	 int n = b_size_; 
+// 	 int64_t lda = b_size_;
+// 	 int ldb = nrows;
+// 	 ctrsm("L","L","N", "N", &n, &n, &alpha, (MKL_Complex8 *)DiagMatrix, &lda,(MKL_Complex8 *)(&TheMatrixD[j/P*b_size_*size_ + i/Q*b_size_]), &lda);
+// }
+
+// void inner_func_c(int i, int j, int k, complex_array &a)
+// {
+//   double alpha, beta;
+//   alpha = -1.0;
+//   beta = 1;
+// 	int ii = i * b_size_, jj = j/P * b_size_, kk = k/Q * b_size_;
+//   cblas_cgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, b_size_, b_size_, b_size_,
+//             &alpha, &RowFinished[(jj * nrows) + ii/Q], nrows , &ColFinished[(ii/P * nrows) + kk], nrows, &beta, &TheMatrixD[(jj * nrows) + kk], nrows);
+
+// }
+
+// void diag_func_c(complex_array &a, complex_array *b, int i)
+// {
+// 	for (int ii = (i/Q) * b_size_; ii < ((i/Q) * b_size_) + b_size_ - 1; ii++){
+
+// 		for (int jj = ii + 1; jj < (i/P * b_size_) + b_size_; jj++)
+// 		{
+// 			a[jj*nrows +ii] /= a[ii*nrows +ii];
+
+// 			for (int kk = ii + 1; kk < (i/P * b_size_) + b_size_; kk++)
+// 			{
+// 				a[jj*nrows +kk] = a[jj*nrows +kk] - (a[jj*nrows +ii] * a[ii*size_ +kk]);
+// 			}
+// 		}
+// 	}
+// }
+
+// void Copy_diagonal(complex_array &a, complex_array &DiagMatrix, const int64_t& i)
+// {
+// 	for(int row=0; row<b_size_;row++)
+// 		for(int col=0; col<b_size_;col++){
+// 			DiagMatrix[row*b_size_ + col] = a[(i+row)*size_ + col];
+// 		}
+// }
+
+// void LU_Decompose_c(nec_output_file &s_output, int64_t n, complex_array &a, int64_t ndim, int_array &ip)
+// {
+
+//   DEBUG_TRACE("lu_decompose_ge(" << n << "," << ndim << ")");
+
+// #ifdef NEC_MATRIX_CHECK
+//   // Debug output to try and figure out the LAPACK stuff
+//   cout << "a = ";
+//   to_octave(a, n, ndim);
+// #endif
+
+//   //quick fix
+//   for (int64_t r = 0; r < n; r++)
+//   {
+//     int rp1 = r + 1;
+//     ip[r] = rp1;
+//   }
+
+//   int nprocs, myrank;
+//   MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+//   MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
+//   b_size_ = find_b_size(n);
+//   cout << "block_size: " << b_size_ << " n is: " << n << endl;
+//   size_ = n;
+//   num_blocks = n / b_size_;
+
+//   //b= (double *)malloc(size_*sizeof(double));
+
+//     // cout<<"2"<<endl;
+// 	// create all the data to share the matrix;
+//     MPI_Datatype blockType;
+//     MPI_Type_vector(b_size_, b_size_, size_, MPI_CXX_DOUBLE_COMPLEX, &blockType);
+//     MPI_Type_commit(&blockType);
+
+//   MPI_Request request[b_size_ * b_size_ * b_size_];
+
+
+// 	MPI_Request request[b_size_ * b_size_ * b_size_];
+// 	int called = 0;
+// 	for (int64_t i = 0; i < num_blocks; i++)
+// 	{   
+// 		if((i%P)*Q+i%Q == myrank){
+// 		 diag_func_c(a,b, i);
+// 		 Copy_diagonal(a, TheMatrixD, i);
+// 		}
+// 		int count = 0;
+
+// 		MPI_Bcast(TheMatrixD,1, blockType, (i%P)*Q+i%Q, MPI_COMM_WORLD); //perfect
+
+// #pragma omp parallel for ordered schedule(dynamic) shared(request) 
+// 		for (int j = i + 1; j < num_blocks; j++)
+// 		{
+//             //(i%P)*Q+j%Q
+//                 if((i%P)*Q+j%Q == myrank){
+// 				    row_func_c(i, j);
+//                 }
+//                 if((j%P)*Q+i%Q == myrank){
+// 				    col_func_c(i, j);
+//                 }
+// 			// brodcasting rows
+// 		}
+//         // time_1 = get_time();
+// 		for (int j = i + 1; j < num_blocks; j++)
+// 		{
+// 			MPI_Bcast(&RowFinished[i*nrows*b_size_ + j*b_size_], 1, blockType,(i%P)*Q+j%Q, MPI_COMM_WORLD); //row
+// 			MPI_Bcast(&ColFinished[j*ncols*b_size_ + i*b_size_], 1, blockType,(j%P)*Q+i%Q, MPI_COMM_WORLD); //column
+// 		}		
+	
+// 		count = 0;
+// 		for (int j = i + 1; j < num_blocks; j++)
+// 		{
+
+// #pragma omp parallel for schedule(dynamic) 
+// 			for (int k = i + 1; k < num_blocks; k++)
+// 			{
+// 				//processor 1
+//                 if((j%P)*Q+k%Q == myrank){
+// 					inner_func_c(i, j, k); 
+//                 }
+// 			}
+// 		}	
+// 	}
+//     // cout << "communication duration: " << mkl_time_span.count() << " s"<<endl;
+// }
+
+//----------------- kaddy commented ------------------------------//
 
 /*! \brief Solve system of linear equations
     Subroutine to solve the matrix equation lu*x=b where l is a unit
