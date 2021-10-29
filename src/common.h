@@ -23,6 +23,8 @@
 #include "typesafe_stdint.h"
 
 #include <complex>
+#define MKL_Complex16 std::complex<double>
+#include <mkl.h>
 /*! \brief Change basic type used by nec2++
   This typedef allows us to use nec2++ with
   a different complex number precision. For example
@@ -30,6 +32,7 @@
 */
 typedef double nec_float;
 typedef std::complex<nec_float> nec_complex;
+// typedef MKL_Complex8 nec_complex;
 
 /* Version information */
 #ifndef nec_build_date

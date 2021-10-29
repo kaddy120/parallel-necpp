@@ -2021,8 +2021,7 @@ void nec_context::load()
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wconversion"
 int Nprocs, Myrank;
-int Q = 1, P = 1;
-int block_size = 4, num_blocks_; 
+int block_size = 64, num_blocks_; 
 
 int i_, r_;
 
@@ -2083,7 +2082,7 @@ void nec_context::cmset( int64_t nrow, complex_array& in_cm, nec_float rkhx) {
 // for(i_=0; i_<num_blocks_; i_++){
 //   for( int j = block_size*i_ + 1; j <= block_size*i_ + block_size; j++ ) {
   
-// #pragma omp parallel for num_threads(6)
+// #pragma omp parallel for num_threads(4)
   for( int j = 1; j <= m_geometry->n_segments; j++ ) {
     m_geometry->trio(j);
     for (int i = 0; i < m_geometry->jsno; i++ ) {
@@ -2121,10 +2120,8 @@ void nec_context::cmset( int64_t nrow, complex_array& in_cm, nec_float rkhx) {
 // }
     MPI_Barrier(MPI_COMM_WORLD);
     auto t2 = high_resolution_clock::now();
-
     /* Getting number of milliseconds as an integer. */
     auto ms_int = duration_cast<duration<double>>(t2 - t1);
-
     /* Getting number of milliseconds as a double. */
     duration<double, std::milli> ms_double = t2 - t1;
     if(Myrank ==0)
@@ -2133,7 +2130,7 @@ void nec_context::cmset( int64_t nrow, complex_array& in_cm, nec_float rkhx) {
 
 // print kaddy  
 
-// if(Myrank ==0)
+// if(Myrank ==2)
 // for(int i=0; i<row_; i++)
 // {
 //   for(int j =0; j<col_; j++){
@@ -2423,7 +2420,7 @@ void nec_context::cmsw( int j1, int j2, int i1, int i2, complex_array& in_cm,
 
 /* cmws computes matrix elements for wire-surface interactions */
 void nec_context::cmws( int j, int i1, int i2, complex_array& in_cm,
-    int64_t nr, complex_array& cw, int64_t nw, int itrp )
+    int64_t nr, complex_array& cw, int64_t nw, int itrp)
 {
   UNUSED(nw);
   int ipr, js=0;
@@ -2604,7 +2601,7 @@ void nec_context::cmww( int j, int i1, int i2, complex_array& in_cm,
   /* observation loop */
 
   int ipr = -1;
-#pragma omp parallel for ordered num_threads(1)
+// #pragma omp parallel for ordered num_threads(2)
 for( i = i1-1; i < i2; i++ ){
     // if((i_%P)*Q+_x%Q == Myrank)
     ipr++;
@@ -2635,19 +2632,19 @@ for( i = i1-1; i < i2; i++ ){
     }
 
     int r = i/block_size;
+    int _x;
     /* transposed fill */
-// #pragma omp ordered
+#pragma omp ordered
     if ( itrp != 2) {
       for (int ij = 0; ij < m_geometry->jsno; ij++ ) {
-// #pragma omp critical
-        int _x = m_geometry->jco[ij]-1;
+        _x = m_geometry->jco[ij]-1;
         int b_j = _x/block_size;
         int _xb = _x%block_size + (b_j/Q)*block_size;
         int iprb = ipr%block_size + (r/P)*block_size;
-        if((r%P)*Q+b_j%Q == 0){
+        if((r%P)*Q+b_j%Q == Myrank){
           // in_cm[_x+ipr*nr] += etk* m_geometry->ax[ij]+ ets* m_geometry->bx[ij]+ etc* m_geometry->cx[ij];
           // cout<<"y: "<<iprb<<" x: "<<_xb<<endl;
-#pragma omp critical
+// #pragma omp critical
           in_cm[_xb+iprb*nr] += etk* m_geometry->ax[ij]+ ets* m_geometry->bx[ij]+ etc* m_geometry->cx[ij];
         }
       }

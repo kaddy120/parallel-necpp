@@ -22,6 +22,8 @@
 #include "math_util.h"
 #include "nec_output.h"
 
+#define Q 1
+#define P 1
 
 template<class T>
 int find_max(T* A, int k);
@@ -32,19 +34,16 @@ void inner_func(int64_t i, int64_t j, int64_t k, complex_array &a);
 void lu_decompose_new(nec_output_file &s_output, int64_t n, complex_array &a, complex_array &b, int64_t ndim);
 
 /* ------------ cyclical function ------------------ */
-// void row_func_c(int64_t i, int64_t j);
-// void col_func_c(int64_t i, int64_t j);
-// void inner_func_c(int64_t i, int64_t j, int k);
-// void diag_func_c(double *TheMatrixD, double *b, int i);
-// void Copy_diagonal(double *TheMatrixD, double *DiagMatrix, const int64_t& i);
-// void LU_decompose_c(nec_output_file &s_output, int64_t n, complex_array &a, complex_array &b, int64_t ndim);
-
-
-
-
-
-
-
+template <class T>
+int find_max(T *A, int k);
+void row_func_c(complex_array &a, int i, int j);
+void col_func_c(complex_array &a, int i, int j);
+void inner_func_c(complex_array &a, int i, int j, int k);
+void diag_func_c(complex_array &a, double *b, int i);
+void display(nec_complex *a);
+void simple_LU(complex_array &a, int64_t n);
+void LU_decompose_cyclic(nec_output_file &s_output, int64_t n, complex_array &a, int_array &ip, int64_t ndim);
+void Copy_diagonal(complex_array &TheMatrixD, MKL_Complex16 *DiagMatrix, const int64_t &i);
 
 
 
