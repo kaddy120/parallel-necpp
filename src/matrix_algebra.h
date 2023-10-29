@@ -22,8 +22,8 @@
 #include "math_util.h"
 #include "nec_output.h"
 
-#define Q 1
-#define P 1
+#define Q 2
+#define P 2
 
 template<class T>
 int find_max(T* A, int k);

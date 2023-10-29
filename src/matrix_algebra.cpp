@@ -831,6 +831,7 @@ void solve_ge(int64_t n, complex_array &a, int_array &ip,
     x[i] = b[i];
 
     int64_t i_offset = i * ndim;
+// #pragma omp parallel for firstprivate(local_x) firstprivate(local_x)
     for (int64_t j = 0; j < i; j++)
     {
       b_j = j / b_size_;
@@ -853,15 +854,15 @@ void solve_ge(int64_t n, complex_array &a, int_array &ip,
     // auto a = global_x[0];
   }
 
-  // if (myrank == 20)
-  // {
-  //   cout << n << endl;
-  //   for (int64_t k = 0; k < n; k++)
-  //   {
-  //     cout << x[k] << " " << endl;
-  //     // cout << b[k] << " " << endl;
-  //   }
-  // }
+//   // if (myrank == 20)
+//   // {
+//   //   cout << n << endl;
+//   //   for (int64_t k = 0; k < n; k++)
+//   //   {
+//   //     cout << x[k] << " " << endl;
+//   //     // cout << b[k] << " " << endl;
+//   //   }
+//   // }
 
   for (int i = n - 1; i >= 0; --i)
   {
@@ -871,6 +872,7 @@ void solve_ge(int64_t n, complex_array &a, int_array &ip,
     // local_x[0] = {0, 0};
     // global_x[0] = {0, 0};
     int i_local_offset;
+#pragma omp parallel for firstprivate(locak_x, global_x)
     for (int j = i + 1; j < n; ++j)
     { // j = i+1 because we want to leave out the value we are solving for
       int b_j = j / b_size_;
@@ -881,15 +883,15 @@ void solve_ge(int64_t n, complex_array &a, int_array &ip,
         local_x[0] += a[i_local_offset * ndim + j_local_offset] * x[j];
       }
     }
-    if(nprocs!=0)
+    // if(nprocs!=0)
     MPI_Allreduce(&local_x[0], &global_x[0], 1, MPI_CXX_DOUBLE_COMPLEX, MPI_SUM,
                   MPI_COMM_WORLD);
-    if(nprocs==0){
-      global_x[0] = local_x[0];
-    }
+    // if(nprocs==0){
+    //   global_x[0] = local_x[0];
+    // }
     x[i] -= global_x[0];
     // shit,,
-    x[i] /= a[i_local_offset * ndim + i];
+    x[i] /= a[i_local_offset * ndim + i_local_offset];
   }
   // ================ serial code underneath ======================
   // // DEBUG_TRACE("solve(" << n << "," << ndim << ")");
